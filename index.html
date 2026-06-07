@@ -545,6 +545,11 @@ function loadLS(){
   if(!raw)return null;
   try{const p=JSON.parse(raw);return norm(p.data||p);}catch{return null;}
 }
+/* 判断 state 里是否有真实流水数据 */
+function hasData(s){
+  if(!s)return false;
+  return Object.values(s.months||{}).some(m=>(m.income||[]).length+(m.expense||[]).length>0);
+}
 function save(){
   localStorage.setItem(SK,JSON.stringify(st));
   if(srvOK){clearTimeout(saveTimer);saveTimer=setTimeout(()=>pushSrv(st).catch(()=>{}),400);}
@@ -772,21 +777,37 @@ $('searchBox').addEventListener('input',renderRecords);
    Boot
 ══════════════════════════════════════════ */
 (async()=>{
+  const seed=()=>norm(DEMO);   // 始终返回预填 demo 数据
+
   if(IS_LOCAL){
     srvOK=await ping();
     if(srvOK){
       try{
         const d=await loadSrv();
-        if(d&&(d.months||d.incCats)){st=norm(d);localStorage.setItem(SK,JSON.stringify(st));}
-        else{
-          // server empty — check LS, else seed demo
+        const srvState=hasData(norm(d))?norm(d):null;
+        if(srvState){
+          // 服务器有真实数据 — 直接使用
+          st=srvState;
+          localStorage.setItem(SK,JSON.stringify(st));
+        }else{
+          // 服务器为空 — 检查 localStorage，再无则注入 demo
           const ls=loadLS();
-          st=ls||(()=>{const s=norm(DEMO);return s;})();
-          await pushSrv(st);
+          st=hasData(ls)?ls:seed();
+          await pushSrv(st);  // 同步到服务器文件
         }
-      }catch{const ls=loadLS();st=ls||norm(DEMO);}
-    }else{const ls=loadLS();st=ls||norm(DEMO);}
-  }else{const ls=loadLS();st=ls||norm(DEMO);}
+      }catch{
+        const ls=loadLS();
+        st=hasData(ls)?ls:seed();
+      }
+    }else{
+      const ls=loadLS();
+      st=hasData(ls)?ls:seed();
+    }
+  }else{
+    const ls=loadLS();
+    st=hasData(ls)?ls:seed();
+  }
+  save();  // 确保落盘
   updateBadge();setType('expense');renderAll();
 })();
 </script>
